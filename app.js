@@ -7,30 +7,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-//USUARIOS
+// USUARIOS
 const userRoutes = require('./src/routes/userRoutes');
-
 app.use('/api/users', userRoutes);
 
 // ANIMALES
 const animalRoutes = require('./src/routes/animalRoutes');
-
 app.use('/api/animals', animalRoutes);
-// permitir acceso a imágenes
-app.use('/uploads', express.static('uploads'));
 
-//
-
+// ANÁLISIS
 const analysisRoutes = require('./src/routes/analysisRoutes');
-
 app.use('/api/analysis', analysisRoutes);
 
-// En tu main.js o app.js, añade:
-
+// REPORTES
 const reportsRoutes = require('./src/routes/reportsRoutes');
 app.use('/api/reports', reportsRoutes);
-
-// Debe ir DESPUÉS de los otros routes
 
 const PORT = process.env.PORT || 3000;
 

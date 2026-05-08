@@ -1,5 +1,5 @@
-// src/controllers/animalController.js
 const animalService = require('../services/animalService');
+const uploadToSupabase = require('../config/uploadToSupabase');
 
 class AnimalController {
   async createAnimal(req, res) {
@@ -7,7 +7,9 @@ class AnimalController {
       if (!req.file) {
         throw new Error('La imagen del animal es obligatoria');
       }
-      const imagen = req.file.filename;
+
+      // ✅ Subir a Supabase Storage
+      const imagenUrl = await uploadToSupabase(req.file);
 
       const animal = await animalService.createAnimal(
         {
@@ -16,7 +18,7 @@ class AnimalController {
           nro_partos: parseInt(req.body.nro_partos),
           fecha_nacimiento: req.body.fecha_nacimiento,
           descripcion: req.body.descripcion,
-          imagen: imagen,
+          imagen: imagenUrl, // ✅ Guardar URL de Supabase
         },
         req.user.id
       );
@@ -40,30 +42,35 @@ class AnimalController {
   }
 
   async updateAnimal(req, res) {
-  try {
-    const imagen = req.file ? req.file.filename : undefined;
+    try {
+      let imagenUrl;
 
-    const animal = await animalService.updateAnimal(
-      req.params.id,
-      {
-        codigo: req.body.codigo,
-        raza: req.body.raza,
-        nro_partos: parseInt(req.body.nro_partos),
-        fecha_nacimiento: req.body.fecha_nacimiento,
-        descripcion: req.body.descripcion,
-        imagen: imagen,
-      },
-      req.user.id
-    );
+      // ✅ Si hay imagen nueva, subirla a Supabase
+      if (req.file) {
+        imagenUrl = await uploadToSupabase(req.file);
+      }
 
-    res.json({
-      message: 'Animal actualizado exitosamente',
-      animal,
-    });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+      const animal = await animalService.updateAnimal(
+        req.params.id,
+        {
+          codigo: req.body.codigo,
+          raza: req.body.raza,
+          nro_partos: parseInt(req.body.nro_partos),
+          fecha_nacimiento: req.body.fecha_nacimiento,
+          descripcion: req.body.descripcion,
+          imagen: imagenUrl, // ✅ URL de Supabase o undefined
+        },
+        req.user.id
+      );
+
+      res.json({
+        message: 'Animal actualizado exitosamente',
+        animal,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
   }
-}
 
   async deleteAnimal(req, res) {
     try {

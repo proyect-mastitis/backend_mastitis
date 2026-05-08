@@ -4,23 +4,33 @@ const fs = require('fs');
 const path = require('path');
 const analysisRepository = require('../repositories/analysisRepository');
 const Analysis = require('../models/analysisModel');
+const uploadToSupabase = require('../config/uploadToSupabase');
+const deleteFromSupabase = require('../config/deleteFromSupabase'); // ✅ NUEVO
 
 const ML_SERVER_URL = process.env.ML_SERVER_URL 
   || 'https://LESLY1-mastitis-ml.hf.space';
+
 class AnalysisService {
   async analyzeAnimal(animalId, files) {
     if (!animalId) throw this._createError('animal_id es requerido');
     if (!files || files.length < 1) throw this._createError('Debe subir al menos 1 imagen');
     if (files.length > 2) throw this._createError('Máximo 2 imágenes permitidas');
 
-    const startTime = Date.now(); // ✅ NUEVO: Capturar tiempo inicio
+    const startTime = Date.now();
 
     const formData = new FormData();
     formData.append('animal_id', animalId);
 
+    // ✅ CORREGIDO: Manejar ambos casos (multer disk y memory storage)
     for (const file of files) {
-      const fileStream = fs.createReadStream(file.path);
-      formData.append('files', fileStream, file.originalname);
+      if (file.path) {
+        // Si es disk storage (tiene path)
+        const fileStream = fs.createReadStream(file.path);
+        formData.append('files', fileStream, file.originalname);
+      } else if (file.buffer) {
+        // Si es memory storage (tiene buffer)
+        formData.append('files', file.buffer, file.originalname);
+      }
     }
 
     try {
@@ -32,7 +42,7 @@ class AnalysisService {
       });
 
       const result = response.data;
-      const processingTimeMs = Date.now() - startTime; // ✅ NUEVO: Calcular tiempo procesamiento
+      const processingTimeMs = Date.now() - startTime;
 
       if (!result.is_valid || result.valid_count === 0) {
         throw this._createError(
@@ -48,38 +58,43 @@ class AnalysisService {
         console.log(`  [${i}] valid=${d.valid}, image_path=${d.image_path}`);
       });
 
-      // ✅ Descargar y guardar imágenes
+      // ✅ MEJORADO: Descargar, guardar en Supabase y obtener URL
       const processedDetails = await Promise.all(
         result.details
           .filter(detail => detail.valid === true)
           .map(async (detail) => {
-            let finalImagePath = detail.image_path;
+            let finalImagePath = null;
 
-            if (detail.image_path) {
+            // ✅ CORREGIDO: Validar que image_path exista y no sea undefined
+            if (detail.image_path && typeof detail.image_path === 'string' && detail.image_path.trim()) {
               try {
                 const imageFilename = path.basename(detail.image_path);
                 const sourceUrl = `${ML_SERVER_URL}${detail.image_path}`;
-                const destPath = path.join(__dirname, '../../uploads', imageFilename);
-
-                const uploadsDir = path.join(__dirname, '../../uploads');
-                if (!fs.existsSync(uploadsDir)) {
-                  fs.mkdirSync(uploadsDir, { recursive: true });
-                }
 
                 console.log(`📥 Descargando: ${sourceUrl}`);
-                const response = await axios.get(sourceUrl, { 
+                const imageResponse = await axios.get(sourceUrl, { 
                   responseType: 'arraybuffer',
                   timeout: 30000
                 });
-                
-                fs.writeFileSync(destPath, response.data);
-                console.log(`✅ Guardada: ${destPath}`);
 
-                finalImagePath = `/uploads/${imageFilename}`;
+                // ✅ Crear objeto similar a multer file para uploadToSupabase
+                const supabaseFile = {
+                  buffer: imageResponse.data,
+                  mimetype: 'image/jpeg', // Ajustar según tipo real
+                  originalname: imageFilename,
+                };
+
+                // ✅ Subir a Supabase Storage
+                finalImagePath = await uploadToSupabase(supabaseFile);
+                console.log(`✅ Guardada en Supabase: ${finalImagePath}`);
+
               } catch (err) {
-                console.warn(`⚠️ Error: ${err.message}`);
-                finalImagePath = detail.image_path;
+                console.warn(`⚠️ Error descargando/subiendo imagen: ${err.message}`);
+                // Si falla, asignar null
+                finalImagePath = null;
               }
+            } else {
+              console.warn(`⚠️ image_path no válido para imagen ${detail.image_position}: ${detail.image_path}`);
             }
 
             return {
@@ -89,7 +104,7 @@ class AnalysisService {
               status: detail.status,
               mastitis_detected: detail.mastitis_detected,
               confidence: detail.confidence,
-              image_path: finalImagePath,
+              image_path: finalImagePath, // ✅ URL de Supabase o null
               image_id: detail.image_id,
               image_width: detail.image_width,
               image_height: detail.image_height,
@@ -98,7 +113,7 @@ class AnalysisService {
           })
       );
 
-      // ✅ NUEVO: Calcular próxima revisión
+      // ✅ Calcular próxima revisión
       const proximaRevision = this._calculateNextReview(
         new Date(),
         result.mastitis_detected || false
@@ -114,9 +129,9 @@ class AnalysisService {
         result.mastitis_detected || false,
         result.valid_count || 0,
         result.total_uploaded || 0,
-        processingTimeMs, // ✅ NUEVO: Pasar tiempo de procesamiento
+        processingTimeMs,
         new Date(),
-        proximaRevision // ✅ NUEVO: Pasar próxima revisión
+        proximaRevision
       );
 
       const savedAnalysis = await analysisRepository.create(analysis);
@@ -128,8 +143,8 @@ class AnalysisService {
         mastitis_detected: savedAnalysis.mastitis_detected,
         confidence: savedAnalysis.confianza,
         analysis_date: savedAnalysis.fecha,
-        processing_time_ms: savedAnalysis.processing_time_ms, // ✅ NUEVO
-        proxima_revision: savedAnalysis.proxima_revision, // ✅ NUEVO
+        processing_time_ms: savedAnalysis.processing_time_ms,
+        proxima_revision: savedAnalysis.proxima_revision,
         is_valid: savedAnalysis.is_valid,
         valid_count: savedAnalysis.valid_count,
         total_uploaded: savedAnalysis.total_uploaded,
@@ -156,11 +171,13 @@ class AnalysisService {
 
       throw error;
     } finally {
+      // ✅ MEJORADO: Limpiar solo archivos de disk storage
       if (files && Array.isArray(files)) {
         files.forEach(file => {
           if (file.path && fs.existsSync(file.path)) {
             try {
               fs.unlinkSync(file.path);
+              console.log(`��� Archivo temporal eliminado: ${file.path}`);
             } catch (e) {
               console.warn(`⚠️ No se pudo eliminar ${file.path}:`, e.message);
             }
@@ -170,13 +187,12 @@ class AnalysisService {
     }
   }
 
-  // ✅ NUEVO: Calcular próxima revisión
   _calculateNextReview(analysisDate, isMastitis) {
     const nextDate = new Date(analysisDate);
     if (isMastitis) {
-      nextDate.setDate(nextDate.getDate() + 3); // 3 días para mastitis
+      nextDate.setDate(nextDate.getDate() + 3);
     } else {
-      nextDate.setDate(nextDate.getDate() + 15); // 15 días para normal
+      nextDate.setDate(nextDate.getDate() + 15);
     }
     return nextDate;
   }
@@ -191,32 +207,29 @@ class AnalysisService {
     return await analysisRepository.findFiltered(animalId, filters);
   }
 
+  // ✅ MEJORADO: Eliminar análisis y sus imágenes
   async deleteAnalysis(id) {
     if (!id) throw this._createError('id es requerido');
 
+    // 1️⃣ Obtener el análisis ANTES de eliminarlo
+    const analysis = await analysisRepository.findById(id);
+    if (!analysis) throw this._createError('Análisis no encontrado');
+
+    // 2️⃣ Eliminar imágenes de Supabase Storage
+    if (analysis.imagenes && Array.isArray(analysis.imagenes)) {
+      console.log(`🗑️ Eliminando ${analysis.imagenes.length} imágenes de Supabase...`);
+      
+      for (const imagen of analysis.imagenes) {
+        if (imagen.image_path) {
+          await deleteFromSupabase(imagen.image_path);
+        }
+      }
+    }
+
+    // 3️⃣ Eliminar registro de la base de datos
     const deleted = await analysisRepository.delete(id);
 
-    if (!deleted) throw this._createError('Análisis no encontrado');
-
-    if (deleted.imagenes && Array.isArray(deleted.imagenes)) {
-      deleted.imagenes.forEach(detail => {
-        if (detail.image_path) {
-          const filePath = path.join(
-            __dirname,
-            '../../uploads',
-            path.basename(detail.image_path)
-          );
-          if (fs.existsSync(filePath)) {
-            try {
-              fs.unlinkSync(filePath);
-              console.log(`🗑️ Imagen eliminada: ${filePath}`);
-            } catch (e) {
-              console.warn(`⚠️ No se pudo eliminar imagen: ${e.message}`);
-            }
-          }
-        }
-      });
-    }
+    if (!deleted) throw this._createError('Error al eliminar análisis de la BD');
 
     return deleted;
   }

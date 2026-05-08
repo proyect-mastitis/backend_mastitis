@@ -1,4 +1,5 @@
 const animalRepository = require('../repositories/animalRepository');
+const deleteFromSupabase = require('../config/deleteFromSupabase'); // ✅ NUEVO
 
 class AnimalService {
   async createAnimal(animalData, usuarioId) {
@@ -97,6 +98,7 @@ class AnimalService {
     };
   }
 
+  // ✅ MEJORADO: Eliminar animal y su imagen
   async deleteAnimal(id, usuarioId) {
     if (!id) {
       throw new Error('id es requerido');
@@ -111,6 +113,13 @@ class AnimalService {
       throw new Error('No tienes permiso para eliminar este animal');
     }
 
+    // ✅ NUEVO: Eliminar imagen de Supabase si existe
+    if (animal.imagen) {
+      console.log(`🗑️ Eliminando imagen de animal: ${animal.imagen}`);
+      await deleteFromSupabase(animal.imagen);
+    }
+
+    // Eliminar de la base de datos
     await animalRepository.delete(id, usuarioId);
   }
 }

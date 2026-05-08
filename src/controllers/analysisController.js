@@ -34,19 +34,20 @@ class AnalysisController {
     } catch (error) {
       console.error('❌ Error en controller:', error.message);
 
+      // ✅ MEJORADO: Manejo robusto de errores
       try {
-        // ✅ CORREGIDO: Parse JSON y manejo correcto de detalles
         const parsed = JSON.parse(error.message);
         
         return res.status(400).json({
           success: false,
           message: parsed.message,
-          details: parsed.details || []  // ✅ Asegurar que details es un array
+          details: Array.isArray(parsed.details) ? parsed.details : []
         });
       } catch {
+        // Si no es JSON, devolver el error como está
         return res.status(500).json({
           success: false,
-          error: error.message
+          error: error.message || 'Error interno del servidor'
         });
       }
     }
@@ -58,6 +59,13 @@ class AnalysisController {
   async getHistory(req, res) {
     try {
       const { animal_id } = req.params;
+
+      if (!animal_id) {
+        return res.status(400).json({
+          success: false,
+          error: 'animal_id es requerido'
+        });
+      }
 
       const history = await analysisService.getHistoryByAnimal(animal_id);
 
@@ -82,6 +90,13 @@ class AnalysisController {
     try {
       const { animal_id } = req.params;
       const { status, search } = req.query;
+
+      if (!animal_id) {
+        return res.status(400).json({
+          success: false,
+          error: 'animal_id es requerido'
+        });
+      }
 
       const history = await analysisService.getHistoryFiltered(animal_id, {
         status: status || null,
@@ -108,6 +123,13 @@ class AnalysisController {
   async deleteAnalysis(req, res) {
     try {
       const { id } = req.params;
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          error: 'id es requerido'
+        });
+      }
 
       const deleted = await analysisService.deleteAnalysis(id);
 
