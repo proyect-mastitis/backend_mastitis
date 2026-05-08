@@ -1,4 +1,3 @@
-// src/repositories/animalRepository.js
 const pool = require('../config/db');
 const Animal = require('../models/animalModel');
 
@@ -34,6 +33,15 @@ class AnimalRepository {
       [id]
     );
     return result.rows[0];
+  }
+
+  // ✅ NUEVO: Obtener todos los análisis de un animal
+  async findAnalysisByAnimalId(animal_id) {
+    const result = await pool.query(
+      `SELECT * FROM analisis WHERE animal_id = $1`,
+      [animal_id]
+    );
+    return result.rows;
   }
 
   async update(id, animalData, usuario_id) {

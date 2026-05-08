@@ -1,5 +1,5 @@
 const animalRepository = require('../repositories/animalRepository');
-const deleteFromSupabase = require('../config/deleteFromSupabase'); // ✅ NUEVO
+const deleteFromSupabase = require('../config/deleteFromSupabase');
 
 class AnimalService {
   async createAnimal(animalData, usuarioId) {
@@ -98,7 +98,7 @@ class AnimalService {
     };
   }
 
-  // ✅ MEJORADO: Eliminar animal y su imagen
+  // ✅ MEJORADO: Eliminar animal, sus análisis e imágenes en cascada
   async deleteAnimal(id, usuarioId) {
     if (!id) {
       throw new Error('id es requerido');
@@ -113,14 +113,56 @@ class AnimalService {
       throw new Error('No tienes permiso para eliminar este animal');
     }
 
-    // ✅ NUEVO: Eliminar imagen de Supabase si existe
+    // 1️⃣ OBTENER TODOS LOS ANÁLISIS DEL ANIMAL
+    console.log(`📋 Buscando análisis del animal ${id}...`);
+    const analisis = await animalRepository.findAnalysisByAnimalId(id);
+
+    // 2️⃣ ELIMINAR IMÁGENES DE TODOS LOS ANÁLISIS
+    if (analisis && analisis.length > 0) {
+      console.log(`🗑️ Eliminando ${analisis.length} análisis y sus imágenes...`);
+      
+      for (const analysis of analisis) {
+        // Parsear imagenes JSON
+        let imagenes = [];
+        try {
+          imagenes = typeof analysis.imagenes === 'string' 
+            ? JSON.parse(analysis.imagenes) 
+            : analysis.imagenes || [];
+        } catch (e) {
+          console.warn(`⚠️ Error parseando imágenes: ${e.message}`);
+        }
+
+        // Eliminar cada imagen de Supabase
+        for (const imagen of imagenes) {
+          if (imagen.image_path) {
+            console.log(`   🗑️ Eliminando imagen: ${imagen.image_path}`);
+            await deleteFromSupabase(imagen.image_path);
+          }
+        }
+
+        // Eliminar análisis de la BD
+        console.log(`   ❌ Eliminando análisis ${analysis.id} de la BD`);
+      }
+    }
+
+    // 3️⃣ ELIMINAR IMAGEN DEL ANIMAL DE SUPABASE
     if (animal.imagen) {
-      console.log(`🗑️ Eliminando imagen de animal: ${animal.imagen}`);
+      console.log(`🗑️ Eliminando imagen del animal: ${animal.imagen}`);
       await deleteFromSupabase(animal.imagen);
     }
 
-    // Eliminar de la base de datos
+    // 4️⃣ ELIMINAR TODOS LOS ANÁLISIS DE LA BD (CASCADE)
+    if (analisis && analisis.length > 0) {
+      await require('../config/db').query(
+        `DELETE FROM analisis WHERE animal_id = $1`,
+        [id]
+      );
+      console.log(`✅ Análisis eliminados de la BD`);
+    }
+
+    // 5️⃣ ELIMINAR EL ANIMAL DE LA BD
     await animalRepository.delete(id, usuarioId);
+    console.log(`✅ Animal eliminado de la BD`);
   }
 }
 
