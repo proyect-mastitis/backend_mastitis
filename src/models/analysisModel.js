@@ -9,18 +9,22 @@ class Analysis {
     mastitis_detected = false,
     valid_count = 0,
     total_uploaded = 0,
-    fecha = null
+    processing_time_ms = 0, // ✅ AGREGADO
+    fecha = null,
+    proxima_revision = null // ✅ AGREGADO
   ) {
     this.id = id;
     this.animal_id = animal_id;
     this.resultado = resultado;
     this.confianza = confianza;
-    this.imagenes = imagenes; // ✅ Array de objetos con detalles de cada imagen
-    this.is_valid = is_valid; // ✅ ¿El análisis es válido?
-    this.mastitis_detected = mastitis_detected; // ✅ ¿Se detectó mastitis?
-    this.valid_count = valid_count; // ✅ Cuántas imágenes fueron válidas
-    this.total_uploaded = total_uploaded; // ✅ Total de imágenes subidas
+    this.imagenes = imagenes;
+    this.is_valid = is_valid;
+    this.mastitis_detected = mastitis_detected;
+    this.valid_count = valid_count;
+    this.total_uploaded = total_uploaded;
+    this.processing_time_ms = processing_time_ms; // ✅ AGREGADO
     this.fecha = fecha || new Date();
+    this.proxima_revision = proxima_revision; // ✅ AGREGADO
   }
 }
 

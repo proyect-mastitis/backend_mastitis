@@ -25,6 +25,13 @@ const analysisRoutes = require('./src/routes/analysisRoutes');
 
 app.use('/api/analysis', analysisRoutes);
 
+// En tu main.js o app.js, añade:
+
+const reportsRoutes = require('./src/routes/reportsRoutes');
+app.use('/api/reports', reportsRoutes);
+
+// Debe ir DESPUÉS de los otros routes
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, '0.0.0.0', () => {
